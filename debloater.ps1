@@ -1,300 +1,194 @@
 #Requires -Version 5.1
+
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
-# =========================================================
-# BLOAT DATABASE (REFERENCE ONLY - NOT UI SOURCE)
-# =========================================================
+# =========================
+# ADMIN CHECK
+# =========================
+$principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    [System.Windows.Forms.MessageBox]::Show("Run as Administrator required")
+    exit
+}
 
+# =========================
+# REAL DEVICE APPS FETCH
+# =========================
+$InstalledApps = Get-AppxPackage -AllUsers | Select-Object Name, PackageFullName
+
+# =========================
+# ENTERPRISE BLOAT DATABASE
+# =========================
 $BloatDB = @(
-    @{ Pattern="*Xbox*"; Score=3; Category="Gaming" },
-    @{ Pattern="*TikTok*"; Score=5; Category="Social" },
-    @{ Pattern="*Instagram*"; Score=5; Category="Social" },
-    @{ Pattern="*Facebook*"; Score=4; Category="Social" },
-    @{ Pattern="*CandyCrush*"; Score=4; Category="Games" },
-    @{ Pattern="*Solitaire*"; Score=2; Category="Games" },
-    @{ Pattern="*Clipchamp*"; Score=3; Category="Media" },
-    @{ Pattern="*Bing*"; Score=3; Category="Microsoft" },
-    @{ Pattern="*YourPhone*"; Score=3; Category="System" },
-    @{ Pattern="*PhoneLink*"; Score=3; Category="System" },
-    @{ Pattern="*Teams*"; Score=3; Category="Productivity" },
-    @{ Pattern="*MixedReality*"; Score=4; Category="System" },
-    @{ Pattern="*Zune*"; Score=2; Category="Legacy" },
-    @{ Pattern="*SkypeApp*"; Score=3; Category="Communication" }
+    "*TikTok*",
+    "*Instagram*",
+    "*Facebook*",
+    "*Twitter*",
+    "*WhatsApp*",
+    "*Spotify*",
+    "*Disney*",
+    "*CandyCrush*",
+    "*Solitaire*",
+    "*Xbox*",
+    "*XboxGamingOverlay*",
+    "*BingNews*",
+    "*BingWeather*",
+    "*BingSports*",
+    "*GetHelp*",
+    "*WindowsFeedbackHub*",
+    "*YourPhone*",
+    "*Skype*",
+    "*Clipchamp*",
+    "*MicrosoftTeams*",
+    "*ZuneMusic*",
+    "*ZuneVideo*"
 )
 
-# =========================================================
-# GET BLOAT DATABASE (LOCAL SAFE)
-# =========================================================
-
-function Get-BloatDatabase {
-    return $BloatDB
-}
-
-# =========================================================
-# DEVICE-FIRST SCANNER (FIXED CORE)
-# =========================================================
-
-function Get-SystemApps {
-
-    $db = Get-BloatDatabase
-    $installed = Get-AppxPackage -AllUsers
-
-    $results = foreach ($app in $installed) {
-
-        foreach ($rule in $db) {
-
-            if ($app.Name -like $rule.Pattern) {
-
-                [PSCustomObject]@{
-                    Name        = $app.Name
-                    Package     = $app.PackageFullName
-                    Category    = $rule.Category
-                    Score       = $rule.Score
-                    Recommended = ($rule.Score -ge 3)
-                }
-
-                break
+# =========================
+# MATCH BLOAT WITH DEVICE
+# =========================
+$MatchedApps = foreach ($app in $InstalledApps) {
+    foreach ($pattern in $BloatDB) {
+        if ($app.Name -like $pattern) {
+            [PSCustomObject]@{
+                Name = $app.Name
+                PackageFullName = $app.PackageFullName
             }
-        }
-    }
-
-    return $results | Sort-Object Score -Descending -Unique
-}
-
-# =========================================================
-# RECOMMENDATION ENGINE (FIXED)
-# =========================================================
-
-function Get-Recommendation($apps, $mode) {
-
-    switch ($mode) {
-
-        "Recommended" {
-            return $apps | Where-Object { $_.Recommended -eq $true }
-        }
-
-        "Safe" {
-            return $apps | Where-Object { $_.Score -ge 4 }
-        }
-
-        "Balanced" {
-            return $apps | Where-Object { $_.Score -ge 3 }
-        }
-
-        "Aggressive" {
-            return $apps | Where-Object { $_.Score -ge 2 }
+            break
         }
     }
 }
 
-# =========================================================
-# REMOVE ENGINE (STABLE)
-# =========================================================
+# Remove duplicates
+$MatchedApps = $MatchedApps | Sort-Object Name -Unique
 
-function Remove-App($app) {
-    try {
-        Get-AppxPackage -AllUsers |
-            Where-Object { $_.PackageFullName -eq $app.Package } |
-            Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue
-
-        Get-AppxProvisionedPackage -Online |
-            Where-Object { $_.DisplayName -like $app.Name } |
-            Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue
-
-        return $true
-    }
-    catch {
-        return $false
-    }
-}
-
-# =========================================================
-# UI SETUP
-# =========================================================
-
-$form = New-Object System.Windows.Forms.Form
-$form.Text = "DebloaterPRO v4 FIXED"
-$form.Size = New-Object System.Drawing.Size(900,700)
+# =========================
+# FORM UI
+# =========================
+$form = New-Object Windows.Forms.Form
+$form.Text = "DebloaterPRO v4 Enterprise"
+$form.Size = New-Object Drawing.Size(850,600)
 $form.StartPosition = "CenterScreen"
 
-$tree = New-Object System.Windows.Forms.TreeView
-$tree.Location = New-Object System.Drawing.Point(10,10)
-$tree.Size = New-Object System.Drawing.Size(600,600)
-$tree.CheckBoxes = $true
+$listBox = New-Object Windows.Forms.CheckedListBox
+$listBox.Dock = "Left"
+$listBox.Width = 550
 
-$btnScan = New-Object System.Windows.Forms.Button
-$btnScan.Text = "Scan Device"
-$btnScan.Location = New-Object System.Drawing.Point(620,20)
-
-$btnRecommended = New-Object System.Windows.Forms.Button
-$btnRecommended.Text = "Recommended"
-$btnRecommended.Location = New-Object System.Drawing.Point(620,60)
-
-$btnSafe = New-Object System.Windows.Forms.Button
-$btnSafe.Text = "Safe Mode"
-$btnSafe.Location = New-Object System.Drawing.Point(620,100)
-
-$btnBalanced = New-Object System.Windows.Forms.Button
-$btnBalanced.Text = "Balanced Mode"
-$btnBalanced.Location = New-Object System.Drawing.Point(620,140)
-
-$btnAggressive = New-Object System.Windows.Forms.Button
-$btnAggressive.Text = "Aggressive Mode"
-$btnAggressive.Location = New-Object System.Drawing.Point(620,180)
-
-$btnRemove = New-Object System.Windows.Forms.Button
-$btnRemove.Text = "REMOVE SELECTED"
-$btnRemove.Location = New-Object System.Drawing.Point(620,240)
-$btnRemove.Width = 200
-
-$form.Controls.AddRange(@(
-    $tree,$btnScan,$btnRecommended,
-    $btnSafe,$btnBalanced,$btnAggressive,
-    $btnRemove
-))
-
-# =========================================================
-# GLOBAL STORE
-# =========================================================
-
-$script:AppData = @()
-
-# =========================================================
-# TREE LOADER (FIXED REAL DATA)
-# =========================================================
-
-function Load-Tree($apps) {
-
-    $tree.Nodes.Clear()
-
-    $groups = $apps | Group-Object Category
-
-    foreach ($group in $groups) {
-
-        $catNode = New-Object System.Windows.Forms.TreeNode($group.Name)
-
-        foreach ($app in $group.Group) {
-
-            $node = New-Object System.Windows.Forms.TreeNode($app.Name)
-            $node.Tag = $app
-
-            $catNode.Nodes.Add($node) | Out-Null
-        }
-
-        $tree.Nodes.Add($catNode) | Out-Null
-    }
-
-    $tree.ExpandAll()
+foreach ($app in $MatchedApps) {
+    [void]$listBox.Items.Add($app.Name)
 }
 
-# =========================================================
-# SCAN BUTTON
-# =========================================================
+# =========================
+# BUTTONS
+# =========================
 
-$btnScan.Add_Click({
-    $script:AppData = Get-SystemApps
+$btnRecommend = New-Object Windows.Forms.Button
+$btnRecommend.Text = "Recommended Select"
+$btnRecommend.Top = 20
+$btnRecommend.Left = 570
+$btnRecommend.Width = 220
 
-    if (-not $script:AppData -or $script:AppData.Count -eq 0) {
-        [System.Windows.Forms.MessageBox]::Show("No bloat apps detected on this system.")
-        return
-    }
+$btnSelectAll = New-Object Windows.Forms.Button
+$btnSelectAll.Text = "Select All"
+$btnSelectAll.Top = 60
+$btnSelectAll.Left = 570
+$btnSelectAll.Width = 220
 
-    Load-Tree $script:AppData
-})
+$btnClear = New-Object Windows.Forms.Button
+$btnClear.Text = "Clear"
+$btnClear.Top = 100
+$btnClear.Left = 570
+$btnClear.Width = 220
 
-# =========================================================
-# RECOMMENDED BUTTON (FIXED LOGIC)
-# =========================================================
+$btnRun = New-Object Windows.Forms.Button
+$btnRun.Text = "RUN DEBLOAT"
+$btnRun.Top = 160
+$btnRun.Left = 570
+$btnRun.Width = 220
+$btnRun.BackColor = "LightGreen"
 
-$btnRecommended.Add_Click({
-    $selected = Get-Recommendation $script:AppData "Recommended"
+# =========================
+# RECOMMENDED LOGIC
+# =========================
+$Recommended = @("*TikTok*","*Instagram*","*CandyCrush*","*BingNews*","*BingWeather*","*Solitaire*","*YourPhone*")
 
-    foreach ($cat in $tree.Nodes) {
-        foreach ($node in $cat.Nodes) {
-
-            $node.Checked = $false
-
-            if ($selected.Package -contains $node.Tag.Package) {
-                $node.Checked = $true
-            }
-        }
-    }
-})
-
-# =========================================================
-# MODE BUTTONS (FIXED)
-# =========================================================
-
-$btnSafe.Add_Click({
-    $selected = Get-Recommendation $script:AppData "Safe"
-
-    foreach ($cat in $tree.Nodes) {
-        foreach ($node in $cat.Nodes) {
-            $node.Checked = ($selected.Package -contains $node.Tag.Package)
-        }
+$btnRecommend.Add_Click({
+    for ($i=0; $i -lt $listBox.Items.Count; $i++) {
+        $name = $listBox.Items[$i]
+        $listBox.SetItemChecked($i, ($Recommended | Where-Object { $name -like $_ }))
     }
 })
 
-$btnBalanced.Add_Click({
-    $selected = Get-Recommendation $script:AppData "Balanced"
-
-    foreach ($cat in $tree.Nodes) {
-        foreach ($node in $cat.Nodes) {
-            $node.Checked = ($selected.Package -contains $node.Tag.Package)
-        }
+$btnSelectAll.Add_Click({
+    for ($i=0; $i -lt $listBox.Items.Count; $i++) {
+        $listBox.SetItemChecked($i,$true)
     }
 })
 
-$btnAggressive.Add_Click({
-    $selected = Get-Recommendation $script:AppData "Aggressive"
-
-    foreach ($cat in $tree.Nodes) {
-        foreach ($node in $cat.Nodes) {
-            $node.Checked = ($selected.Package -contains $node.Tag.Package)
-        }
+$btnClear.Add_Click({
+    for ($i=0; $i -lt $listBox.Items.Count; $i++) {
+        $listBox.SetItemChecked($i,$false)
     }
 })
 
-# =========================================================
-# REMOVE SELECTED
-# =========================================================
+# =========================
+# RUN DEBLOAT (FIXED SAFE)
+# =========================
+$btnRun.Add_Click({
 
-$btnRemove.Add_Click({
-
-    $toRemove = @()
-
-    foreach ($cat in $tree.Nodes) {
-        foreach ($node in $cat.Nodes) {
-            if ($node.Checked) {
-                $toRemove += $node.Tag
-            }
+    $selected = @()
+    for ($i=0; $i -lt $listBox.Items.Count; $i++) {
+        if ($listBox.GetItemChecked($i)) {
+            $selected += $listBox.Items[$i]
         }
     }
 
-    if ($toRemove.Count -eq 0) {
-        [System.Windows.Forms.MessageBox]::Show("Nothing selected.")
+    if ($selected.Count -eq 0) {
+        [System.Windows.Forms.MessageBox]::Show("Nothing selected")
         return
     }
 
     $confirm = [System.Windows.Forms.MessageBox]::Show(
-        "Remove $($toRemove.Count) apps?",
+        "Remove $($selected.Count) apps?",
         "Confirm",
         "YesNo"
     )
 
     if ($confirm -ne "Yes") { return }
 
-    foreach ($app in $toRemove) {
-        Remove-App $app
+    foreach ($name in $selected) {
+
+        $pkg = $MatchedApps | Where-Object { $_.Name -eq $name }
+
+        if ($pkg) {
+            try {
+                Get-AppxPackage -AllUsers |
+                    Where-Object { $_.Name -eq $pkg.Name } |
+                    Remove-AppxPackage -ErrorAction SilentlyContinue
+
+                Write-Host "Removed $name"
+            }
+            catch {
+                Write-Host "Failed $name"
+            }
+        }
     }
 
-    [System.Windows.Forms.MessageBox]::Show("Completed.")
+    [System.Windows.Forms.MessageBox]::Show("Done")
 })
 
-# =========================================================
-# RUN APP
-# =========================================================
+# =========================
+# ADD CONTROLS
+# =========================
+$form.Controls.Add($listBox)
+$form.Controls.Add($btnRecommend)
+$form.Controls.Add($btnSelectAll)
+$form.Controls.Add($btnClear)
+$form.Controls.Add($btnRun)
 
-[System.Windows.Forms.Application]::Run($form)
+# =========================
+# RUN UI
+# =========================
+[void]$form.ShowDialog()
