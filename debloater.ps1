@@ -7,138 +7,165 @@ Add-Type -AssemblyName System.Drawing
 # =========================
 # ADMIN CHECK
 # =========================
-$principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+$principal = New-Object Security.Principal.WindowsPrincipal(
+    [Security.Principal.WindowsIdentity]::GetCurrent()
+)
+
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    [System.Windows.Forms.MessageBox]::Show("Run as Administrator required")
+    [System.Windows.Forms.MessageBox]::Show("Run PowerShell as Administrator")
     exit
 }
 
 # =========================
-# REAL DEVICE APPS FETCH
+# GET REAL INSTALLED APPS
 # =========================
-$InstalledApps = Get-AppxPackage -AllUsers | Select-Object Name, PackageFullName
+$InstalledApps = Get-AppxPackage -AllUsers |
+Select-Object Name, PackageFullName
 
 # =========================
-# ENTERPRISE BLOAT DATABASE
+# BLOAT INTELLIGENCE RULES
+# (NOT FIXED LIST — MATCH ENGINE)
 # =========================
-$BloatDB = @(
-    "*TikTok*",
-    "*Instagram*",
-    "*Facebook*",
-    "*Twitter*",
-    "*WhatsApp*",
-    "*Spotify*",
-    "*Disney*",
-    "*CandyCrush*",
-    "*Solitaire*",
-    "*Xbox*",
-    "*XboxGamingOverlay*",
-    "*BingNews*",
-    "*BingWeather*",
-    "*BingSports*",
-    "*GetHelp*",
-    "*WindowsFeedbackHub*",
-    "*YourPhone*",
-    "*Skype*",
-    "*Clipchamp*",
-    "*MicrosoftTeams*",
-    "*ZuneMusic*",
-    "*ZuneVideo*"
+$BloatRules = @(
+    "*tiktok*",
+    "*instagram*",
+    "*facebook*",
+    "*twitter*",
+    "*whatsapp*",
+
+    "*xbox*",
+    "*gaming*",
+    "*solitaire*",
+    "*minecraft*",
+    "*candycrush*",
+
+    "*bing*",
+    "*zune*",
+    "*clipchamp*",
+    "*gethelp*",
+    "*feedbackhub*",
+    "*yourphone*",
+
+    "*spotify*",
+    "*netflix*",
+    "*disney*",
+
+    "*windowscommunicationsapps*"
 )
 
 # =========================
-# MATCH BLOAT WITH DEVICE
+# DETECT REAL BLOAT ON DEVICE
 # =========================
-$MatchedApps = foreach ($app in $InstalledApps) {
-    foreach ($pattern in $BloatDB) {
-        if ($app.Name -like $pattern) {
+$Detected = foreach ($app in $InstalledApps) {
+
+    foreach ($rule in $BloatRules) {
+
+        if ($app.Name -like $rule) {
+
             [PSCustomObject]@{
-                Name = $app.Name
-                PackageFullName = $app.PackageFullName
+                Name    = $app.Name
+                Package = $app.PackageFullName
             }
+
             break
         }
     }
 }
 
-# Remove duplicates
-$MatchedApps = $MatchedApps | Sort-Object Name -Unique
+$Detected = $Detected | Sort-Object Name -Unique
 
 # =========================
-# FORM UI
+# UI
 # =========================
-$form = New-Object Windows.Forms.Form
-$form.Text = "DebloaterPRO v4 Enterprise"
-$form.Size = New-Object Drawing.Size(850,600)
+$form = New-Object System.Windows.Forms.Form
+$form.Text = "DebloaterPRO v4 (Fixed Engine)"
+$form.Size = New-Object System.Drawing.Size(800, 600)
 $form.StartPosition = "CenterScreen"
 
-$listBox = New-Object Windows.Forms.CheckedListBox
+$listBox = New-Object System.Windows.Forms.CheckedListBox
 $listBox.Dock = "Left"
-$listBox.Width = 550
+$listBox.Width = 500
 
-foreach ($app in $MatchedApps) {
+foreach ($app in $Detected) {
     [void]$listBox.Items.Add($app.Name)
 }
 
 # =========================
 # BUTTONS
 # =========================
-
-$btnRecommend = New-Object Windows.Forms.Button
-$btnRecommend.Text = "Recommended Select"
-$btnRecommend.Top = 20
-$btnRecommend.Left = 570
-$btnRecommend.Width = 220
-
-$btnSelectAll = New-Object Windows.Forms.Button
+$btnSelectAll = New-Object System.Windows.Forms.Button
 $btnSelectAll.Text = "Select All"
-$btnSelectAll.Top = 60
-$btnSelectAll.Left = 570
+$btnSelectAll.Location = New-Object System.Drawing.Point(520, 20)
 $btnSelectAll.Width = 220
 
-$btnClear = New-Object Windows.Forms.Button
+$btnClear = New-Object System.Windows.Forms.Button
 $btnClear.Text = "Clear"
-$btnClear.Top = 100
-$btnClear.Left = 570
+$btnClear.Location = New-Object System.Drawing.Point(520, 60)
 $btnClear.Width = 220
 
-$btnRun = New-Object Windows.Forms.Button
+$btnRecommend = New-Object System.Windows.Forms.Button
+$btnRecommend.Text = "Recommended"
+$btnRecommend.Location = New-Object System.Drawing.Point(520, 100)
+$btnRecommend.Width = 220
+
+$btnRun = New-Object System.Windows.Forms.Button
 $btnRun.Text = "RUN DEBLOAT"
-$btnRun.Top = 160
-$btnRun.Left = 570
+$btnRun.Location = New-Object System.Drawing.Point(520, 160)
 $btnRun.Width = 220
-$btnRun.BackColor = "LightGreen"
+$btnRun.BackColor = [System.Drawing.Color]::LightGreen
 
 # =========================
-# RECOMMENDED LOGIC
+# RECOMMENDED SET
 # =========================
-$Recommended = @("*TikTok*","*Instagram*","*CandyCrush*","*BingNews*","*BingWeather*","*Solitaire*","*YourPhone*")
+$Recommended = @(
+    "*tiktok*",
+    "*instagram*",
+    "*facebook*",
+    "*candycrush*",
+    "*solitaire*",
+    "*bingnews*",
+    "*bingweather*",
+    "*yourphone*"
+)
 
-$btnRecommend.Add_Click({
-    for ($i=0; $i -lt $listBox.Items.Count; $i++) {
-        $name = $listBox.Items[$i]
-        $listBox.SetItemChecked($i, ($Recommended | Where-Object { $name -like $_ }))
-    }
-})
-
+# =========================
+# EVENTS
+# =========================
 $btnSelectAll.Add_Click({
     for ($i=0; $i -lt $listBox.Items.Count; $i++) {
-        $listBox.SetItemChecked($i,$true)
+        $listBox.SetItemChecked($i, $true)
     }
 })
 
 $btnClear.Add_Click({
     for ($i=0; $i -lt $listBox.Items.Count; $i++) {
-        $listBox.SetItemChecked($i,$false)
+        $listBox.SetItemChecked($i, $false)
+    }
+})
+
+$btnRecommend.Add_Click({
+    for ($i=0; $i -lt $listBox.Items.Count; $i++) {
+        $name = $listBox.Items[$i]
+
+        $match = $false
+        foreach ($r in $Recommended) {
+            if ($name -like $r) {
+                $match = $true
+                break
+            }
+        }
+
+        $listBox.SetItemChecked($i, $match)
     }
 })
 
 # =========================
-# RUN DEBLOAT (FIXED SAFE)
+# REMOVE ENGINE (SAFE FIXED)
 # =========================
 $btnRun.Add_Click({
 
     $selected = @()
+
     for ($i=0; $i -lt $listBox.Items.Count; $i++) {
         if ($listBox.GetItemChecked($i)) {
             $selected += $listBox.Items[$i]
@@ -146,21 +173,21 @@ $btnRun.Add_Click({
     }
 
     if ($selected.Count -eq 0) {
-        [System.Windows.Forms.MessageBox]::Show("Nothing selected")
+        [System.Windows.Forms.MessageBox]::Show("No apps selected")
         return
     }
 
     $confirm = [System.Windows.Forms.MessageBox]::Show(
         "Remove $($selected.Count) apps?",
         "Confirm",
-        "YesNo"
+        [System.Windows.Forms.MessageBoxButtons]::YesNo
     )
 
     if ($confirm -ne "Yes") { return }
 
     foreach ($name in $selected) {
 
-        $pkg = $MatchedApps | Where-Object { $_.Name -eq $name }
+        $pkg = $Detected | Where-Object { $_.Name -eq $name }
 
         if ($pkg) {
             try {
@@ -168,27 +195,27 @@ $btnRun.Add_Click({
                     Where-Object { $_.Name -eq $pkg.Name } |
                     Remove-AppxPackage -ErrorAction SilentlyContinue
 
-                Write-Host "Removed $name"
+                Write-Host "Removed: $name"
             }
             catch {
-                Write-Host "Failed $name"
+                Write-Host "Failed: $name"
             }
         }
     }
 
-    [System.Windows.Forms.MessageBox]::Show("Done")
+    [System.Windows.Forms.MessageBox]::Show("Debloat Complete")
 })
 
 # =========================
 # ADD CONTROLS
 # =========================
 $form.Controls.Add($listBox)
-$form.Controls.Add($btnRecommend)
 $form.Controls.Add($btnSelectAll)
 $form.Controls.Add($btnClear)
+$form.Controls.Add($btnRecommend)
 $form.Controls.Add($btnRun)
 
 # =========================
-# RUN UI
+# RUN
 # =========================
 [void]$form.ShowDialog()
