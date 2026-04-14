@@ -1,0 +1,9 @@
+[
+  { "Pattern": "*TikTok*", "Score": 5, "Category": "Social" },
+  { "Pattern": "*Instagram*", "Score": 5, "Category": "Social" },
+  { "Pattern": "*Facebook*", "Score": 4, "Category": "Social" },
+  { "Pattern": "*Xbox*", "Score": 3, "Category": "Gaming" },
+  { "Pattern": "*CandyCrush*", "Score": 4, "Category": "Games" },
+  { "Pattern": "*Clipchamp*", "Score": 3, "Category": "Media" },
+  { "Pattern": "*Bing*", "Score": 3, "Category": "Microsoft" }
+]
