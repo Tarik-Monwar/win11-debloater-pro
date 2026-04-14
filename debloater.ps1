@@ -4,75 +4,85 @@ Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
 # =========================================================
-# CONFIG - ONLINE BLOAT DATABASE (GitHub RAW JSON)
+# BLOAT DATABASE (REFERENCE ONLY - NOT UI SOURCE)
 # =========================================================
 
-$BloatDBUrl = "https://raw.githubusercontent.com/Tarik-Monwar/win11-debloater-pro/main/bloatdb.json"
+$BloatDB = @(
+    @{ Pattern="*Xbox*"; Score=3; Category="Gaming" },
+    @{ Pattern="*TikTok*"; Score=5; Category="Social" },
+    @{ Pattern="*Instagram*"; Score=5; Category="Social" },
+    @{ Pattern="*Facebook*"; Score=4; Category="Social" },
+    @{ Pattern="*CandyCrush*"; Score=4; Category="Games" },
+    @{ Pattern="*Solitaire*"; Score=2; Category="Games" },
+    @{ Pattern="*Clipchamp*"; Score=3; Category="Media" },
+    @{ Pattern="*Bing*"; Score=3; Category="Microsoft" },
+    @{ Pattern="*YourPhone*"; Score=3; Category="System" },
+    @{ Pattern="*PhoneLink*"; Score=3; Category="System" },
+    @{ Pattern="*Teams*"; Score=3; Category="Productivity" },
+    @{ Pattern="*MixedReality*"; Score=4; Category="System" },
+    @{ Pattern="*Zune*"; Score=2; Category="Legacy" },
+    @{ Pattern="*SkypeApp*"; Score=3; Category="Communication" }
+)
+
+# =========================================================
+# GET BLOAT DATABASE (LOCAL SAFE)
+# =========================================================
 
 function Get-BloatDatabase {
-    try {
-        return Invoke-RestMethod -Uri $BloatDBUrl -UseBasicParsing -ErrorAction Stop
-    } catch {
-        # fallback offline DB (critical apps included)
-        return @(
-            @{ Pattern="*TikTok*"; Score=5; Category="Social" },
-            @{ Pattern="*Instagram*"; Score=5; Category="Social" },
-            @{ Pattern="*Facebook*"; Score=4; Category="Social" },
-            @{ Pattern="*Xbox*"; Score=3; Category="Gaming" },
-            @{ Pattern="*CandyCrush*"; Score=4; Category="Games" },
-            @{ Pattern="*Solitaire*"; Score=2; Category="Games" },
-            @{ Pattern="*Bing*"; Score=3; Category="Microsoft" },
-            @{ Pattern="*Clipchamp*"; Score=3; Category="Media" },
-            @{ Pattern="*YourPhone*"; Score=3; Category="System" },
-            @{ Pattern="*PhoneLink*"; Score=3; Category="System" },
-            @{ Pattern="*Teams*"; Score=3; Category="Productivity" },
-            @{ Pattern="*MixedReality*"; Score=4; Category="System" },
-            @{ Pattern="*Zune*"; Score=2; Category="Legacy" }
-        )
-    }
+    return $BloatDB
 }
 
 # =========================================================
-# SCAN SYSTEM APPS
+# DEVICE-FIRST SCANNER (FIXED CORE)
 # =========================================================
 
 function Get-SystemApps {
+
     $db = Get-BloatDatabase
-    $apps = Get-AppxPackage -AllUsers
+    $installed = Get-AppxPackage -AllUsers
 
-    $result = foreach ($app in $apps) {
+    $results = foreach ($app in $installed) {
 
-        $match = $db | Where-Object { $app.Name -like $_.Pattern }
+        foreach ($rule in $db) {
 
-        if ($match) {
-            $score = ($match.Score | Measure-Object -Maximum).Maximum
+            if ($app.Name -like $rule.Pattern) {
 
-            [PSCustomObject]@{
-                Name     = $app.Name
-                Package  = $app.PackageFullName
-                Category = ($match.Category | Select-Object -First 1)
-                Score    = $score
-                Keep     = $false
+                [PSCustomObject]@{
+                    Name        = $app.Name
+                    Package     = $app.PackageFullName
+                    Category    = $rule.Category
+                    Score       = $rule.Score
+                    Recommended = ($rule.Score -ge 3)
+                }
+
+                break
             }
         }
     }
 
-    return $result | Sort-Object Score -Descending
+    return $results | Sort-Object Score -Descending -Unique
 }
 
 # =========================================================
-# RECOMMENDATION ENGINE
+# RECOMMENDATION ENGINE (FIXED)
 # =========================================================
 
-function Get-Recommendations($apps, $mode) {
+function Get-Recommendation($apps, $mode) {
 
     switch ($mode) {
+
+        "Recommended" {
+            return $apps | Where-Object { $_.Recommended -eq $true }
+        }
+
         "Safe" {
             return $apps | Where-Object { $_.Score -ge 4 }
         }
+
         "Balanced" {
             return $apps | Where-Object { $_.Score -ge 3 }
         }
+
         "Aggressive" {
             return $apps | Where-Object { $_.Score -ge 2 }
         }
@@ -80,7 +90,7 @@ function Get-Recommendations($apps, $mode) {
 }
 
 # =========================================================
-# REMOVE ENGINE
+# REMOVE ENGINE (STABLE)
 # =========================================================
 
 function Remove-App($app) {
@@ -94,7 +104,8 @@ function Remove-App($app) {
             Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue
 
         return $true
-    } catch {
+    }
+    catch {
         return $false
     }
 }
@@ -104,50 +115,63 @@ function Remove-App($app) {
 # =========================================================
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "DebloaterPRO v4 Enterprise"
+$form.Text = "DebloaterPRO v4 FIXED"
 $form.Size = New-Object System.Drawing.Size(900,700)
 $form.StartPosition = "CenterScreen"
 
 $tree = New-Object System.Windows.Forms.TreeView
 $tree.Location = New-Object System.Drawing.Point(10,10)
 $tree.Size = New-Object System.Drawing.Size(600,600)
+$tree.CheckBoxes = $true
 
 $btnScan = New-Object System.Windows.Forms.Button
-$btnScan.Text = "Scan Apps"
+$btnScan.Text = "Scan Device"
 $btnScan.Location = New-Object System.Drawing.Point(620,20)
 
-$btnRecommend = New-Object System.Windows.Forms.Button
-$btnRecommend.Text = "Recommended"
-$btnRecommend.Location = New-Object System.Drawing.Point(620,60)
+$btnRecommended = New-Object System.Windows.Forms.Button
+$btnRecommended.Text = "Recommended"
+$btnRecommended.Location = New-Object System.Drawing.Point(620,60)
+
+$btnSafe = New-Object System.Windows.Forms.Button
+$btnSafe.Text = "Safe Mode"
+$btnSafe.Location = New-Object System.Drawing.Point(620,100)
+
+$btnBalanced = New-Object System.Windows.Forms.Button
+$btnBalanced.Text = "Balanced Mode"
+$btnBalanced.Location = New-Object System.Drawing.Point(620,140)
+
+$btnAggressive = New-Object System.Windows.Forms.Button
+$btnAggressive.Text = "Aggressive Mode"
+$btnAggressive.Location = New-Object System.Drawing.Point(620,180)
 
 $btnRemove = New-Object System.Windows.Forms.Button
-$btnRemove.Text = "Remove Selected"
-$btnRemove.Location = New-Object System.Drawing.Point(620,100)
+$btnRemove.Text = "REMOVE SELECTED"
+$btnRemove.Location = New-Object System.Drawing.Point(620,240)
+$btnRemove.Width = 200
 
-$modeBox = New-Object System.Windows.Forms.ComboBox
-$modeBox.Items.AddRange(@("Safe","Balanced","Aggressive"))
-$modeBox.SelectedIndex = 1
-$modeBox.Location = New-Object System.Drawing.Point(620,140)
-
-$form.Controls.AddRange(@($tree,$btnScan,$btnRecommend,$btnRemove,$modeBox))
+$form.Controls.AddRange(@(
+    $tree,$btnScan,$btnRecommended,
+    $btnSafe,$btnBalanced,$btnAggressive,
+    $btnRemove
+))
 
 # =========================================================
-# GLOBAL DATA STORE
+# GLOBAL STORE
 # =========================================================
 
 $script:AppData = @()
 
 # =========================================================
-# BUILD TREE VIEW
+# TREE LOADER (FIXED REAL DATA)
 # =========================================================
 
 function Load-Tree($apps) {
 
     $tree.Nodes.Clear()
 
-    $grouped = $apps | Group-Object Category
+    $groups = $apps | Group-Object Category
 
-    foreach ($group in $grouped) {
+    foreach ($group in $groups) {
 
         $catNode = New-Object System.Windows.Forms.TreeNode($group.Name)
 
@@ -155,10 +179,6 @@ function Load-Tree($apps) {
 
             $node = New-Object System.Windows.Forms.TreeNode($app.Name)
             $node.Tag = $app
-
-            if ($app.Keep -eq $true) {
-                $node.Checked = $true
-            }
 
             $catNode.Nodes.Add($node) | Out-Null
         }
@@ -175,26 +195,28 @@ function Load-Tree($apps) {
 
 $btnScan.Add_Click({
     $script:AppData = Get-SystemApps
+
+    if (-not $script:AppData -or $script:AppData.Count -eq 0) {
+        [System.Windows.Forms.MessageBox]::Show("No bloat apps detected on this system.")
+        return
+    }
+
     Load-Tree $script:AppData
 })
 
 # =========================================================
-# RECOMMENDED BUTTON (YOUR REQUEST FEATURE)
+# RECOMMENDED BUTTON (FIXED LOGIC)
 # =========================================================
 
-$btnRecommend.Add_Click({
-
-    $mode = $modeBox.SelectedItem
-    $recommended = Get-Recommendations $script:AppData $mode
+$btnRecommended.Add_Click({
+    $selected = Get-Recommendation $script:AppData "Recommended"
 
     foreach ($cat in $tree.Nodes) {
         foreach ($node in $cat.Nodes) {
 
-            $match = $recommended | Where-Object {
-                $_.Package -eq $node.Tag.Package
-            }
+            $node.Checked = $false
 
-            if ($match) {
+            if ($selected.Package -contains $node.Tag.Package) {
                 $node.Checked = $true
             }
         }
@@ -202,7 +224,41 @@ $btnRecommend.Add_Click({
 })
 
 # =========================================================
-# REMOVE BUTTON
+# MODE BUTTONS (FIXED)
+# =========================================================
+
+$btnSafe.Add_Click({
+    $selected = Get-Recommendation $script:AppData "Safe"
+
+    foreach ($cat in $tree.Nodes) {
+        foreach ($node in $cat.Nodes) {
+            $node.Checked = ($selected.Package -contains $node.Tag.Package)
+        }
+    }
+})
+
+$btnBalanced.Add_Click({
+    $selected = Get-Recommendation $script:AppData "Balanced"
+
+    foreach ($cat in $tree.Nodes) {
+        foreach ($node in $cat.Nodes) {
+            $node.Checked = ($selected.Package -contains $node.Tag.Package)
+        }
+    }
+})
+
+$btnAggressive.Add_Click({
+    $selected = Get-Recommendation $script:AppData "Aggressive"
+
+    foreach ($cat in $tree.Nodes) {
+        foreach ($node in $cat.Nodes) {
+            $node.Checked = ($selected.Package -contains $node.Tag.Package)
+        }
+    }
+})
+
+# =========================================================
+# REMOVE SELECTED
 # =========================================================
 
 $btnRemove.Add_Click({
@@ -218,15 +274,23 @@ $btnRemove.Add_Click({
     }
 
     if ($toRemove.Count -eq 0) {
-        [System.Windows.Forms.MessageBox]::Show("No apps selected")
+        [System.Windows.Forms.MessageBox]::Show("Nothing selected.")
         return
     }
+
+    $confirm = [System.Windows.Forms.MessageBox]::Show(
+        "Remove $($toRemove.Count) apps?",
+        "Confirm",
+        "YesNo"
+    )
+
+    if ($confirm -ne "Yes") { return }
 
     foreach ($app in $toRemove) {
         Remove-App $app
     }
 
-    [System.Windows.Forms.MessageBox]::Show("Done removing selected apps")
+    [System.Windows.Forms.MessageBox]::Show("Completed.")
 })
 
 # =========================================================
