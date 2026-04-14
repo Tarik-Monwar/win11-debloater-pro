@@ -1,162 +1,236 @@
 #Requires -Version 5.1
-
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
-# ============================================================
-# DATA LAYER (NO UI MIXED LOGIC)
-# ============================================================
-$Apps = @(
-    @{ Name="TikTok";     Pattern="*TikTok*" },
-    @{ Name="Instagram";  Pattern="*Instagram*" },
-    @{ Name="Facebook";   Pattern="*Facebook*" },
-    @{ Name="Bing News";  Pattern="*BingNews*" },
-    @{ Name="Bing Weather";Pattern="*BingWeather*" },
-    @{ Name="Solitaire";  Pattern="*MicrosoftSolitaireCollection*" },
-    @{ Name="Xbox";       Pattern="*Xbox*" },
-    @{ Name="Clipchamp";  Pattern="*Clipchamp*" },
-    @{ Name="Your Phone"; Pattern="*YourPhone*" },
-    @{ Name="Teams";      Pattern="*MicrosoftTeams*" }
-)
+# =========================================================
+# CONFIG - ONLINE BLOAT DATABASE (GitHub RAW JSON)
+# =========================================================
 
-# ============================================================
-# UI FORM
-# ============================================================
-$form = New-Object System.Windows.Forms.Form
-$form.Text = "Debloater PRO (Stable Build)"
-$form.Size = New-Object System.Drawing.Size(520, 650)
-$form.StartPosition = "CenterScreen"
-$form.BackColor = [System.Drawing.Color]::FromArgb(18,18,28)
-$form.ForeColor = [System.Drawing.Color]::White
+$BloatDBUrl = "https://raw.githubusercontent.com/Tarik-Monwar/win11-debloater-pro/main/bloatdb.json"
 
-$title = New-Object System.Windows.Forms.Label
-$title.Text = "Windows Debloater PRO"
-$title.Font = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
-$title.ForeColor = [System.Drawing.Color]::White
-$title.Location = New-Object System.Drawing.Point(20, 15)
-$title.Size = New-Object System.Drawing.Size(400, 30)
-$form.Controls.Add($title)
-
-# ============================================================
-# CHECKBOX PANEL (SCROLL SAFE)
-# ============================================================
-$panel = New-Object System.Windows.Forms.Panel
-$panel.Location = New-Object System.Drawing.Point(20, 60)
-$panel.Size = New-Object System.Drawing.Size(460, 420)
-$panel.AutoScroll = $true
-$panel.BackColor = [System.Drawing.Color]::FromArgb(25,25,40)
-$form.Controls.Add($panel)
-
-$checkboxes = @{}
-$y = 10
-
-foreach ($app in $Apps) {
-
-    $cb = New-Object System.Windows.Forms.CheckBox
-    $cb.Text = $app.Name
-    $cb.Location = New-Object System.Drawing.Point(15, $y)
-    $cb.Size = New-Object System.Drawing.Size(300, 22)
-    $cb.ForeColor = [System.Drawing.Color]::White
-    $cb.FlatStyle = "Flat"
-
-    $panel.Controls.Add($cb)
-    $checkboxes[$app.Name] = $cb
-
-    $y += 28
+function Get-BloatDatabase {
+    try {
+        return Invoke-RestMethod -Uri $BloatDBUrl -UseBasicParsing -ErrorAction Stop
+    } catch {
+        # fallback offline DB (critical apps included)
+        return @(
+            @{ Pattern="*TikTok*"; Score=5; Category="Social" },
+            @{ Pattern="*Instagram*"; Score=5; Category="Social" },
+            @{ Pattern="*Facebook*"; Score=4; Category="Social" },
+            @{ Pattern="*Xbox*"; Score=3; Category="Gaming" },
+            @{ Pattern="*CandyCrush*"; Score=4; Category="Games" },
+            @{ Pattern="*Solitaire*"; Score=2; Category="Games" },
+            @{ Pattern="*Bing*"; Score=3; Category="Microsoft" },
+            @{ Pattern="*Clipchamp*"; Score=3; Category="Media" },
+            @{ Pattern="*YourPhone*"; Score=3; Category="System" },
+            @{ Pattern="*PhoneLink*"; Score=3; Category="System" },
+            @{ Pattern="*Teams*"; Score=3; Category="Productivity" },
+            @{ Pattern="*MixedReality*"; Score=4; Category="System" },
+            @{ Pattern="*Zune*"; Score=2; Category="Legacy" }
+        )
+    }
 }
 
-# ============================================================
-# BUTTONS
-# ============================================================
+# =========================================================
+# SCAN SYSTEM APPS
+# =========================================================
 
-$btnSelectAll = New-Object System.Windows.Forms.Button
-$btnSelectAll.Text = "Select All"
-$btnSelectAll.Location = New-Object System.Drawing.Point(20, 500)
-$btnSelectAll.Size = New-Object System.Drawing.Size(140, 35)
+function Get-SystemApps {
+    $db = Get-BloatDatabase
+    $apps = Get-AppxPackage -AllUsers
 
-$btnSelectNone = New-Object System.Windows.Forms.Button
-$btnSelectNone.Text = "Clear"
-$btnSelectNone.Location = New-Object System.Drawing.Point(170, 500)
-$btnSelectNone.Size = New-Object System.Drawing.Size(140, 35)
+    $result = foreach ($app in $apps) {
 
-$btnRun = New-Object System.Windows.Forms.Button
-$btnRun.Text = "RUN DEBLOAT"
-$btnRun.Location = New-Object System.Drawing.Point(320, 500)
-$btnRun.Size = New-Object System.Drawing.Size(160, 35)
-$btnRun.BackColor = [System.Drawing.Color]::Green
-$btnRun.ForeColor = [System.Drawing.Color]::Black
+        $match = $db | Where-Object { $app.Name -like $_.Pattern }
 
-$form.Controls.AddRange(@($btnSelectAll,$btnSelectNone,$btnRun))
+        if ($match) {
+            $score = ($match.Score | Measure-Object -Maximum).Maximum
 
-# ============================================================
-# LOGIC (SAFE + NO PARSER TRAPS)
-# ============================================================
+            [PSCustomObject]@{
+                Name     = $app.Name
+                Package  = $app.PackageFullName
+                Category = ($match.Category | Select-Object -First 1)
+                Score    = $score
+                Keep     = $false
+            }
+        }
+    }
 
-$btnSelectAll.Add_Click({
-    foreach ($k in $checkboxes.Keys) { $checkboxes[$k].Checked = $true }
+    return $result | Sort-Object Score -Descending
+}
+
+# =========================================================
+# RECOMMENDATION ENGINE
+# =========================================================
+
+function Get-Recommendations($apps, $mode) {
+
+    switch ($mode) {
+        "Safe" {
+            return $apps | Where-Object { $_.Score -ge 4 }
+        }
+        "Balanced" {
+            return $apps | Where-Object { $_.Score -ge 3 }
+        }
+        "Aggressive" {
+            return $apps | Where-Object { $_.Score -ge 2 }
+        }
+    }
+}
+
+# =========================================================
+# REMOVE ENGINE
+# =========================================================
+
+function Remove-App($app) {
+    try {
+        Get-AppxPackage -AllUsers |
+            Where-Object { $_.PackageFullName -eq $app.Package } |
+            Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue
+
+        Get-AppxProvisionedPackage -Online |
+            Where-Object { $_.DisplayName -like $app.Name } |
+            Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue
+
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+# =========================================================
+# UI SETUP
+# =========================================================
+
+$form = New-Object System.Windows.Forms.Form
+$form.Text = "DebloaterPRO v4 Enterprise"
+$form.Size = New-Object System.Drawing.Size(900,700)
+$form.StartPosition = "CenterScreen"
+
+$tree = New-Object System.Windows.Forms.TreeView
+$tree.Location = New-Object System.Drawing.Point(10,10)
+$tree.Size = New-Object System.Drawing.Size(600,600)
+
+$btnScan = New-Object System.Windows.Forms.Button
+$btnScan.Text = "Scan Apps"
+$btnScan.Location = New-Object System.Drawing.Point(620,20)
+
+$btnRecommend = New-Object System.Windows.Forms.Button
+$btnRecommend.Text = "Recommended"
+$btnRecommend.Location = New-Object System.Drawing.Point(620,60)
+
+$btnRemove = New-Object System.Windows.Forms.Button
+$btnRemove.Text = "Remove Selected"
+$btnRemove.Location = New-Object System.Drawing.Point(620,100)
+
+$modeBox = New-Object System.Windows.Forms.ComboBox
+$modeBox.Items.AddRange(@("Safe","Balanced","Aggressive"))
+$modeBox.SelectedIndex = 1
+$modeBox.Location = New-Object System.Drawing.Point(620,140)
+
+$form.Controls.AddRange(@($tree,$btnScan,$btnRecommend,$btnRemove,$modeBox))
+
+# =========================================================
+# GLOBAL DATA STORE
+# =========================================================
+
+$script:AppData = @()
+
+# =========================================================
+# BUILD TREE VIEW
+# =========================================================
+
+function Load-Tree($apps) {
+
+    $tree.Nodes.Clear()
+
+    $grouped = $apps | Group-Object Category
+
+    foreach ($group in $grouped) {
+
+        $catNode = New-Object System.Windows.Forms.TreeNode($group.Name)
+
+        foreach ($app in $group.Group) {
+
+            $node = New-Object System.Windows.Forms.TreeNode($app.Name)
+            $node.Tag = $app
+
+            if ($app.Keep -eq $true) {
+                $node.Checked = $true
+            }
+
+            $catNode.Nodes.Add($node) | Out-Null
+        }
+
+        $tree.Nodes.Add($catNode) | Out-Null
+    }
+
+    $tree.ExpandAll()
+}
+
+# =========================================================
+# SCAN BUTTON
+# =========================================================
+
+$btnScan.Add_Click({
+    $script:AppData = Get-SystemApps
+    Load-Tree $script:AppData
 })
 
-$btnSelectNone.Add_Click({
-    foreach ($k in $checkboxes.Keys) { $checkboxes[$k].Checked = $false }
+# =========================================================
+# RECOMMENDED BUTTON (YOUR REQUEST FEATURE)
+# =========================================================
+
+$btnRecommend.Add_Click({
+
+    $mode = $modeBox.SelectedItem
+    $recommended = Get-Recommendations $script:AppData $mode
+
+    foreach ($cat in $tree.Nodes) {
+        foreach ($node in $cat.Nodes) {
+
+            $match = $recommended | Where-Object {
+                $_.Package -eq $node.Tag.Package
+            }
+
+            if ($match) {
+                $node.Checked = $true
+            }
+        }
+    }
 })
 
-# ============================================================
-# CORE REMOVAL ENGINE (FIXED & SAFE)
-# ============================================================
-$btnRun.Add_Click({
+# =========================================================
+# REMOVE BUTTON
+# =========================================================
 
-    $selected = $Apps | Where-Object { $checkboxes[$_.Name].Checked }
+$btnRemove.Add_Click({
 
-    if (-not $selected) {
-        [System.Windows.Forms.MessageBox]::Show("Select at least one app.")
+    $toRemove = @()
+
+    foreach ($cat in $tree.Nodes) {
+        foreach ($node in $cat.Nodes) {
+            if ($node.Checked) {
+                $toRemove += $node.Tag
+            }
+        }
+    }
+
+    if ($toRemove.Count -eq 0) {
+        [System.Windows.Forms.MessageBox]::Show("No apps selected")
         return
     }
 
-    # SAFE MESSAGE BUILD (NO ":" BUG EVER)
-    $names = ($selected.Name -join "`n")
-
-    $msg = "You are about to remove:`n`n$names`n`nContinue?"
-
-    $confirm = [System.Windows.Forms.MessageBox]::Show(
-        $msg,
-        "Confirm",
-        "YesNo",
-        "Warning"
-    )
-
-    if ($confirm -ne "Yes") { return }
-
-    foreach ($app in $selected) {
-
-        Write-Host "Processing $($app.Name)..." -ForegroundColor Yellow
-
-        try {
-            # Installed apps
-            Get-AppxPackage -AllUsers |
-                Where-Object { $_.Name -like $app.Pattern } |
-                ForEach-Object {
-                    Remove-AppxPackage -Package $_.PackageFullName -ErrorAction SilentlyContinue
-                }
-
-            # Provisioned apps
-            Get-AppxProvisionedPackage -Online |
-                Where-Object { $_.DisplayName -like $app.Pattern } |
-                ForEach-Object {
-                    Remove-AppxProvisionedPackage -Online -PackageName $_.PackageName -ErrorAction SilentlyContinue
-                }
-
-            Write-Host "Removed: $($app.Name)" -ForegroundColor Green
-        }
-        catch {
-            Write-Host "Failed: $($app.Name)" -ForegroundColor Red
-        }
+    foreach ($app in $toRemove) {
+        Remove-App $app
     }
 
-    [System.Windows.Forms.MessageBox]::Show("Debloat Complete!")
+    [System.Windows.Forms.MessageBox]::Show("Done removing selected apps")
 })
 
-# ============================================================
-# RUN
-# ============================================================
+# =========================================================
+# RUN APP
+# =========================================================
+
 [System.Windows.Forms.Application]::Run($form)
